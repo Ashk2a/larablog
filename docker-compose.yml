@@ -1,0 +1,81 @@
+version: '3.9'
+
+services:
+    app:
+        build:
+            context: ./docker/app
+            dockerfile: Dockerfile
+            args:
+                USER: ${USER_NAME}
+                GROUP: ${GROUP_NAME}
+                UID: ${LOCAL_UID}
+                GID: ${LOCAL_GID}
+        container_name: larablog_app
+        labels:
+            - "traefik.enable=false"
+        ports:
+            - '${PHP_PORT:-9000}:9000'
+        volumes:
+            - './:/var/www/app'
+        networks:
+            - larablog
+        depends_on:
+            - mariadb
+
+    nginx:
+        build:
+            context: ./docker/nginx
+            dockerfile: Dockerfile
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.larablog.rule=Host(`${HOST_NAME}`)" # domain to expose on
+            - "traefik.docker.network=larablog"
+        container_name: larablog_nginx
+        ports:
+            - '${HOST_PORT:-80}:80'
+        volumes:
+            - './:/var/www/app'
+        networks:
+            - larablog
+        depends_on:
+            - app
+
+    mariadb:
+        image: mariadb
+        container_name: larablog_mariadb
+        labels:
+            - "traefik.enable=false"
+        ports:
+            - '${DB_PORT_FORWARDED:-3306}:3306'
+        environment:
+            - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+            - MYSQL_DATABASE=${DB_DATABASE}
+            - MYSQL_USER=${DB_USERNAME}
+            - MYSQL_PASSWORD=${DB_PASSWORD}
+        volumes:
+            - larablog_mariadb:/var/lib/mysql
+        networks:
+            - larablog
+
+    mailhog:
+        image: 'mailhog/mailhog:latest'
+        container_name: larablog_mail
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.larablog_mail.rule=Host(`${MAIL_URL}`)" # domain to expose on
+            - "traefik.docker.network=larablog"
+            - "traefik.http.services.mailhog.loadbalancer.server.port=8025"
+        ports:
+            - '${FORWARD_MAILHOG_PORT:-1025}:1025'
+            - '${FORWARD_MAILHOG_DASHBOARD_PORT:-8025}:8025'
+        networks:
+            - larablog
+
+networks:
+    larablog:
+        driver: bridge
+        external:
+            name: larablog
+
+volumes:
+    larablog_mariadb:
